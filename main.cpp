@@ -9,15 +9,24 @@
 int main(int argc, char* argv[]) {
 
 	// Implement an option parser for port/authentication/proxy type
-	if (argc > 1) {
-
-	}
-
 
 	printf("[#] Starting proxy server on port 1080!\n\n");
 
 	int serverSocket;
-	if ((serverSocket = Sock5Proxy::startProxy()) == SOCKET_ERROR) {
+	if (argc == 1) {
+		if ((serverSocket = Sock5Proxy::startProxy()) == SOCKET_ERROR) {
+			return 0;
+		}
+	}
+	else if (argc == 2) {
+		int port = atoi(argv[1]);
+		if ((serverSocket = Sock5Proxy::startProxy(port)) == SOCKET_ERROR) {
+			return 0;
+		}
+	}
+	else {
+		printf("Sock5 Proxy\n\n");
+		printf("Usage: %s [port number]\n\n", argv[0]);
 		return 0;
 	}
 
