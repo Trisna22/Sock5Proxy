@@ -10,6 +10,8 @@
  *
  * RFC: https://datatracker.ietf.org/doc/html/rfc1928
  * C2: https://github.com/Trisna22/Odysseus
+ * 
+ * Example source code from C2 BOF is at /Odysseus_Sock5Proxy_example_bof.cpp
  */
 
 #ifndef SOCK5_PROXY_H
