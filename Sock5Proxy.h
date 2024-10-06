@@ -217,9 +217,7 @@ private:
 
 		send(this->clientSocket, ip, 4, 0);
 		send(this->clientSocket, (char*)&port, sizeof(port), 0);
-
 	}
-
 
 	/**
 	 *	Handle SOCK5 authentication.

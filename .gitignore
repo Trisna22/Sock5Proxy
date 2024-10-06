@@ -3,6 +3,11 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/VisualStudio.gitignore
 
+# Skip user related files and debug data.
+./x64/
+./Sock5Proxy.vcxproj.user
+./enc_temp_folder/
+
 # User-specific files
 *.rsuser
 *.suo
