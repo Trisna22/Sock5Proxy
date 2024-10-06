@@ -1,6 +1,11 @@
 # Sock5Proxy
 Implementation of the SOCK5 proxy protocol.
 
+## Usage
+```powershell
+Sock5Proxy.exe [port number]
+```
+
 ## Example
 This implementation is taken from an other project, the Odysseus Sock5 proxy BOF.  
 Located at /Odysseus_Sock5Proxy_example_bof.cpp
