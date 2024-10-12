@@ -1,6 +1,5 @@
 #pragma once
 
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include "stdafx.h"
 
 /**
@@ -15,7 +14,7 @@
  */
 
 #ifndef SOCK5_PROXY_H
-#define SOCK5_PROXY_H
+#define SOCK5_PROXY_H n 
 
 #define DEFAULT_PROXY_PORT				1080
 #define ARRAY_INIT                      {0}
@@ -200,7 +199,7 @@ private:
 	void sendObject(T obj, int size) {
 #ifdef WIN32
 
-		if (send(this->clientSocket, (char*) & obj, size, 0) == SOCKET_ERROR) {
+		if (send(this->clientSocket, (char*) &obj, size, 0) == SOCKET_ERROR) {
 			printf("[!] Failed to send proxy object! Error code: %d\n", WSAGetLastError());
 		}
 #else
@@ -447,7 +446,6 @@ public:
 	~Sock5Proxy() {
 
 #ifdef WIN32
-			WSACleanup();
 			closesocket(this->clientSocket);
 #else
 			close(this->clientSocket);
@@ -590,8 +588,9 @@ public:
 			this->exitThread();
 			break;
 		}
+
 		default: {
-			printf("[-] Unknown proxy command: %hhx\n", request.command);
+			printf("[-] Unknown proxy method: %hhx\n", request.command);
 
 			CommandResponse response = {
 				ver::SOCKS5,
@@ -700,7 +699,7 @@ public:
 
 		for (;;) {
 
-			// Accept a client.4
+			// Accept a client.
 			int clientSocket = accept(serverSocket, (SOCKADDR*)&remote, &remoteLen);
 			if (clientSocket == INVALID_SOCKET) {
 				if (WSAGetLastError() == WSAEWOULDBLOCK) {
