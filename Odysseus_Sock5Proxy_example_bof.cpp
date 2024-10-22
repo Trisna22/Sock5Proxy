@@ -496,7 +496,7 @@ public:
             CommandResponse response = {
                 ver::SOCKS5,
                 CommandReply::CMD_NOT_SUPPORTED,
-                0x00, // Reserved
+          b      0x00, // Reserved
                 request.addrType,
             };
             

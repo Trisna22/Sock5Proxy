@@ -47,6 +47,12 @@ private:
 		NO_ACCEPTABLE = 0xFF
 	};
 
+	// SOCK5 authentication response
+	enum AuthResponse : uint8_t {
+		SUCCESS = 0x00,
+		WRONG = 0x01
+	};
+
 	// SOCK5 commands
 	enum Command : uint8_t {
 		CONNECT = 0x01,
@@ -141,6 +147,8 @@ private:
 	AuthMethods authMethod;
 	struct SOCK5ThreadParams {
 		int clientSocket;
+		char* username;
+		char* password;
 	};
 
 	/**
@@ -222,6 +230,7 @@ private:
 	 *	Handle SOCK5 authentication.
 	 */
 	void handleSOCK5Authentication() {
+
 		switch (this->authMethod)
 		{
 		case AuthMethods::NOAUTH: {
@@ -238,10 +247,108 @@ private:
 
 		case AuthMethods::USER_PASSWORD: {
 
-			printf("[!] USERNAME PASSWORD authentication not yet implemented!\n");
-			this->exitThread();
+			// Send response that we want USERNAME/PASSWORD auth.
+			InvitationResponse response = {
+				ver::SOCKS5,
+				AuthMethods::USER_PASSWORD
+			};
+
+			sendObject<InvitationResponse>(response, sizeof(InvitationResponse));
+			negotiateUsernamePassword();
 			break;
 		}
+
+		default: {
+
+			// Send response its fine.
+			InvitationResponse response = {
+				ver::SOCKS5,
+				AuthMethods::NO_ACCEPTABLE
+			};
+
+			sendObject<InvitationResponse>(response, sizeof(InvitationResponse));
+			break;
+		}
+		}
+	}
+
+	/**
+	*	Handle username/password negotiation.
+	*	RFC (sub memo): https://datatracker.ietf.org/doc/html/rfc1929
+	*/
+	void negotiateUsernamePassword() {
+
+		printf("[!] Username/Password subnegotiation\n");
+		int red;
+
+		// First check version of subnegotiation.
+		uint8_t version = this->receiveObject<uint8_t>(&red);
+		if (version != 0x01) {
+			printf("[!] This version %d of subnegotiation not supported!\n", version);
+			this->exitThread();
+			return;
+		}
+
+		// Get username length.
+		uint8_t usernameLength = this->receiveObject<uint8_t>(&red);
+		if (usernameLength <= 0) {
+			this->exitThread();
+			return;
+		}
+
+		// Get username.
+		char *USER = new char[usernameLength];
+		red = recv(this->clientSocket, USER, usernameLength, NULL);
+		if (red <= 0) {
+			printf("[-] Failed to receive username object! Error code: %d\n", WSAGetLastError());
+			this->exitThread();
+		}
+
+		USER[red] = '\0';
+
+
+		// Get password length.
+		uint8_t passwordLength = this->receiveObject<uint8_t>(&red);
+		if (passwordLength <= 0) {
+			this->exitThread();
+			return;
+		}
+
+		// Get password.
+		char* PASS = new char[passwordLength];
+		red = recv(this->clientSocket, PASS, passwordLength, NULL);
+		if (red <= 0) {
+			printf("[-] Failed to receive password object! Error code: %d\n", WSAGetLastError());
+			this->exitThread();
+		}
+
+		PASS[red] = '\0';
+
+
+
+		if (strlen(USER) == strlen(this->proxyUsername) && 
+			strlen(PASS) == strlen(this->proxyPassword) &&
+			strncmp(this->proxyUsername, USER, strlen(USER)) == 0 &&
+			strncmp(this->proxyPassword, PASS, strlen(PASS)) == 0) {
+
+			printf("[!] Credentials mmatch!\n");
+
+			InvitationResponse response = {
+				0x01, // Version of authentication method.
+				AuthResponse::SUCCESS
+			};
+			this->sendObject<InvitationResponse>(response, sizeof(response));
+		}
+		else {
+
+			printf("[-] Credentials don' t match!\n");
+
+			InvitationResponse response = {
+				0x01, // Version of authentication method.
+				AuthResponse::WRONG
+			};
+			this->sendObject<InvitationResponse>(response, sizeof(response));
+			this->exitThread();
 		}
 	}
 
@@ -440,8 +547,10 @@ private:
 
 public:
 
-	Sock5Proxy(int sock) : clientSocket(sock) {}
-	Sock5Proxy(int sock, char* username, char* password) : clientSocket(sock), proxyUsername(username), proxyPassword(password) {}
+	Sock5Proxy(int sock) : clientSocket(sock), authMethod(AuthMethods::NOAUTH) {}
+
+	Sock5Proxy(int sock, char* username, char* password) : clientSocket(sock), 
+		authMethod(AuthMethods::USER_PASSWORD), proxyUsername(username), proxyPassword(password) {}
 
 	~Sock5Proxy() {
 
@@ -499,7 +608,6 @@ public:
 				this->handleSOCK5Authentication();
 				return; // Exit function instead of suicide.
 			}
-
 		}
 		else if (inv.version == ver::SOCKS4) {
 
@@ -533,18 +641,12 @@ public:
 			// Check if an domain is given instead of IP.
 			if (request.addrType == AddressType::FQDN) {
 				
-				// Parse domain.
+				// Parse domain and port.
 				char* domain = parseDomain();
-
-				// Parse port.
 				port = parsePortDomain();
-				
-				printf("[i] Got domain %s:%d\n", domain, port);
 
 				// Resolve address.			
 				IP = resolveDomain(domain);
-
-				printf("[i] Resolved IP: %s\n", IP);
 			}
 			else {
 				// Parse the addresses.
@@ -624,6 +726,44 @@ public:
 			pipeSocketApp(this->clientSocket, appSocket);
 
 		}
+		else {
+			// Send response error.
+			CommandResponse response = {
+				ver::SOCKS5,
+				CommandReply::ERR,
+				0x00, // Reserved
+				request.addrType
+			};
+
+			// Based on socket error.
+			switch (errno) {
+			case ENETDOWN:
+			case ENETUNREACH: {
+				response.reply = CommandReply::NETWORK_UNREACHABLE;
+				break;
+			}
+
+			case ECONNREFUSED: {
+				response.reply = CommandReply::CONNECTION_REFUSED;
+				break;
+			}
+
+			case ECONNRESET: {
+				response.reply = CommandReply::ERR;
+				break;
+			}
+
+			default: {
+				response.reply = CommandReply::ERR;
+				break;
+			}
+			}
+
+			this->sendObject<CommandResponse>(response, sizeof(response));
+			this->sendIPResponse("0.0.0.0", 666);
+		}
+
+		this->exitThread(); // If finished close thread.
 	}
 
 	/**
@@ -690,7 +830,7 @@ public:
 	/**
 	*	App loop
 	*/
-	static int handleClients(int serverSocket) {
+	static int handleClients(int serverSocket, char* username, char* password) {
 
 		u_long mode = 1;
 		SOCKADDR_IN remote;
@@ -720,6 +860,8 @@ public:
 
 			SOCK5ThreadParams params;
 			params.clientSocket = clientSocket;
+			params.username = username;
+			params.password = password;
 			if (CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)Sock5Proxy::proxyClientHandler, &params, NULL, NULL) == INVALID_HANDLE_VALUE)
 			{
 				printf("[-] Failed to create a new thread for the client! Error code: %d\n", GetLastError());
@@ -741,9 +883,19 @@ public:
 		int clientSocket = threadParams->clientSocket;
 
 		// Start SOCK5 protocol on new client.
-		Sock5Proxy proxy(clientSocket);
-		proxy.invitation();
-		proxy.handleRequests();
+		if (threadParams->username == NULL) {
+
+			Sock5Proxy proxy(clientSocket);
+			proxy.invitation();
+			proxy.handleRequests();
+		}
+		else {
+
+			Sock5Proxy proxy(clientSocket, threadParams->username, threadParams->password);
+			proxy.invitation();
+			proxy.handleRequests();
+		}
+
 		return 0;
 	}
 };
