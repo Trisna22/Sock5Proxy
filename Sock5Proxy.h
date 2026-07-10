@@ -1,20 +1,21 @@
+// (full file - updated the reply addrType fields to use AddressType::IPV4 where appropriate)
 #pragma once
 
 #include "stdafx.h"
 
 /**
- * Lightweight implementation of Socks protocol version 5 
- * 
+ * Lightweight implementation of Socks protocol version 5
+ *
  * This project is taken from my other project, the C2 server Odysseus.
  *
  * RFC: https://datatracker.ietf.org/doc/html/rfc1928
  * C2: https://github.com/Trisna22/Odysseus
- * 
+ *
  * Example source code from C2 BOF is at /Odysseus_Sock5Proxy_example_bof.cpp
  */
 
 #ifndef SOCK5_PROXY_H
-#define SOCK5_PROXY_H n 
+#define SOCK5_PROXY_H
 
 #define DEFAULT_PROXY_PORT				1080
 #define ARRAY_INIT                      {0}
@@ -25,9 +26,9 @@ typedef uint8_t uint128_t[16];  // For IPv6 addresses.
 
 // For setting the error code on linux builds.
 #ifndef WIN32
-	int WSAGetLastError() {
-		return errno;
-	}
+int WSAGetLastError() {
+	return errno;
+}
 #endif 
 
 
@@ -138,7 +139,7 @@ private:
 
 	} SOCK5_COMMAND_REPLY;
 
-	#pragma pack(push, 1)
+#pragma pack(push, 1)
 
 private:
 	int clientSocket;
@@ -184,15 +185,15 @@ private:
 				return receiveObject<T>(red); // Do again.
 			}
 
-			printf("[!] Failed to receive proxy object! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[!] Failed to receive proxy object! Error code: %d\n", WSAGetLastError());
 			this->exitThread();
 		}
 
-		T *tempObj = reinterpret_cast<T*>(data);
+		T* tempObj = reinterpret_cast<T*>(data);
 		obj = *tempObj;
 #else
 		if ((*red = recv(this->clientSocket, &obj, sizeof(T), NULL)) <= 0) {
-			printf("[!] Failed to receive proxy object! Error code: %d\n", errno);
+			dbgprintf("[!] Failed to receive proxy object! Error code: %d\n", errno);
 			this->exitThread();
 		}
 #endif
@@ -207,23 +208,41 @@ private:
 	void sendObject(T obj, int size) {
 #ifdef WIN32
 
-		if (send(this->clientSocket, (char*) &obj, size, 0) == SOCKET_ERROR) {
-			printf("[!] Failed to send proxy object! Error code: %d\n", WSAGetLastError());
+		if (send(this->clientSocket, (char*)&obj, size, 0) == SOCKET_ERROR) {
+			dbgprintf("[!] Failed to send proxy object! Error code: %d\n", WSAGetLastError());
 		}
 #else
 		if (send(this->clientSocket, &obj, size, NULL) == SOCKET_ERROR) {
-			printf("[!] Failed to send proxy object! Error code: %d\n", errno);
+			dbgprintf("[!] Failed to send proxy object! Error code: %d\n", errno);
 		}
 #endif
 	}
 
 	/**
-	 *	Send IP & PORT response.
+	 *	Send IPv4 BND.ADDR and BND.PORT in binary network order (per RFC1928).
+	 *	ipHostOrder: IPv4 in host byte order (e.g. INADDR_ANY = 0)
+	 *	portHostOrder: port in host byte order (e.g. 666)
 	 */
-	void sendIPResponse(const char* ip, unsigned short int port) {
+	void sendIPResponse(uint32_t ipHostOrder, uint16_t portHostOrder) {
+		uint32_t ip_net = htonl(ipHostOrder);   // 4 bytes network order
+		uint16_t port_net = htons(portHostOrder); // 2 bytes network order
 
-		send(this->clientSocket, ip, 4, 0);
-		send(this->clientSocket, (char*)&port, sizeof(port), 0);
+		// send binary IPv4 address and port
+#ifdef WIN32
+		if (send(this->clientSocket, (char*)&ip_net, sizeof(ip_net), 0) == SOCKET_ERROR) {
+			dbgprintf("[!] Failed to send BND.ADDR! Error code: %d\n", WSAGetLastError());
+		}
+		if (send(this->clientSocket, (char*)&port_net, sizeof(port_net), 0) == SOCKET_ERROR) {
+			dbgprintf("[!] Failed to send BND.PORT! Error code: %d\n", WSAGetLastError());
+		}
+#else
+		if (send(this->clientSocket, (char*)&ip_net, sizeof(ip_net), 0) == SOCKET_ERROR) {
+			dbgprintf("[!] Failed to send BND.ADDR! Error code: %d\n", errno);
+		}
+		if (send(this->clientSocket, (char*)&port_net, sizeof(port_net), 0) == SOCKET_ERROR) {
+			dbgprintf("[!] Failed to send BND.PORT! Error code: %d\n", errno);
+		}
+#endif
 	}
 
 	/**
@@ -278,13 +297,13 @@ private:
 	*/
 	void negotiateUsernamePassword() {
 
-		printf("[!] Username/Password subnegotiation\n");
+		dbgprintf("[!] Username/Password subnegotiation\n");
 		int red;
 
 		// First check version of subnegotiation.
 		uint8_t version = this->receiveObject<uint8_t>(&red);
 		if (version != 0x01) {
-			printf("[!] This version %d of subnegotiation not supported!\n", version);
+			dbgprintf("[!] This version %d of subnegotiation not supported!\n", version);
 			this->exitThread();
 			return;
 		}
@@ -297,10 +316,10 @@ private:
 		}
 
 		// Get username.
-		char *USER = new char[usernameLength];
+		char* USER = new char[usernameLength + 1];
 		red = recv(this->clientSocket, USER, usernameLength, NULL);
 		if (red <= 0) {
-			printf("[-] Failed to receive username object! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[-] Failed to receive username object! Error code: %d\n", WSAGetLastError());
 			this->exitThread();
 		}
 
@@ -315,10 +334,10 @@ private:
 		}
 
 		// Get password.
-		char* PASS = new char[passwordLength];
+		char* PASS = new char[passwordLength + 1];
 		red = recv(this->clientSocket, PASS, passwordLength, NULL);
 		if (red <= 0) {
-			printf("[-] Failed to receive password object! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[-] Failed to receive password object! Error code: %d\n", WSAGetLastError());
 			this->exitThread();
 		}
 
@@ -326,12 +345,12 @@ private:
 
 
 
-		if (strlen(USER) == strlen(this->proxyUsername) && 
+		if (strlen(USER) == strlen(this->proxyUsername) &&
 			strlen(PASS) == strlen(this->proxyPassword) &&
 			strncmp(this->proxyUsername, USER, strlen(USER)) == 0 &&
 			strncmp(this->proxyPassword, PASS, strlen(PASS)) == 0) {
 
-			printf("[!] Credentials mmatch!\n");
+			dbgprintf("[!] Credentials mmatch!\n");
 
 			InvitationResponse response = {
 				0x01, // Version of authentication method.
@@ -341,7 +360,7 @@ private:
 		}
 		else {
 
-			printf("[-] Credentials don' t match!\n");
+			dbgprintf("[-] Credentials don' t match!\n");
 
 			InvitationResponse response = {
 				0x01, // Version of authentication method.
@@ -355,11 +374,13 @@ private:
 	/**
 	 *	Convert uint32 to IP address.
 	*/
-	static char* parseIPv4(uint32_t value) {
-		
+	static char* parseIPv4(uint32_t ipNetworkOrder) {
+
 		char* IP = new char[INET_ADDRSTRLEN];
-		if (inet_ntop(AF_INET, &value, IP, INET_ADDRSTRLEN) == NULL) {
-			printf("[-] Failed to parse the IPv4 address! Error code: %d\n", WSAGetLastError());
+		in_addr addr;
+		addr.s_addr = ipNetworkOrder; // already network order
+		if (inet_ntop(AF_INET, &addr, IP, INET_ADDRSTRLEN) == NULL) {
+			dbgprintf("[-] Failed to parse the IPv4 address! Error code: %d\n", WSAGetLastError());
 			return NULL;
 		}
 
@@ -377,12 +398,16 @@ private:
 		size = this->receiveObject<unsigned char>(&red);
 
 		char* name = (char*)malloc((sizeof(char) * size) + 1);
+		// Zero allocated buffer
+		ZeroMemory(name, size + 1);
+
 		if (recv(this->clientSocket, name, size, 0) <= 0) {
-			printf("[-] Failed to receive the app domain to connect to! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[-] Failed to receive the app domain to connect to! Error code: %d\n", WSAGetLastError());
 			return NULL;
 		}
-
 		name[size] = '\0';
+		dbgprintf("[!] Domain name: %s\n", name);
+		dbgprintf("[!] Domain name size: %d\n", size);
 		return name;
 	}
 
@@ -393,79 +418,134 @@ private:
 
 		UINT16 port = 0;
 		if (recv(this->clientSocket, (char*)&port, sizeof(UINT16), 0) <= 0) {
-			printf("[-] Failed to receive the app port to connect to! Error code: %d\n", WSAGetLastError());
-			return NULL;
+			dbgprintf("[-] Failed to receive the app port to connect to! Error code: %d\n", WSAGetLastError());
+			return 0;
 		}
 
-		return htons(port);
+		// Received in network byte order; return host order
+		return ntohs(port);
 	}
 
 	/**
 	 *	Resolves domain name to IP.
 	*/
-	char* resolveDomain(char* domain) {
-		
-		ADDRINFOA hints;
-		ADDRINFOA* result;
-		ZeroMemory(&hints, sizeof(ADDRINFOA));
-
-		hints.ai_family = AF_INET;
-		hints.ai_socktype = SOCK_STREAM;
-		hints.ai_protocol = IPPROTO_TCP;
-		hints.ai_flags = AI_PASSIVE;
-
-		if (GetAddrInfoA(domain, "1", &hints, &result) != 0) {
-			printf("[-] Failed to get address information about domain name! Error code: %d\n", WSAGetLastError());
-			return NULL;
-		}
-
-		char *IP = (char*)malloc(INET_ADDRSTRLEN);
-
-		// Get the first one from the list if possible.
-		for (addrinfo* ptr = result; ptr != nullptr; ptr = ptr->ai_next) {
-
-			// Only IPv4 addresses.
-			if (ptr->ai_family == AF_INET) {
-
-				sockaddr_in* sockaddr = (sockaddr_in*)ptr->ai_addr;
-				inet_ntop(AF_INET, &(sockaddr->sin_addr), IP, INET_ADDRSTRLEN);
-				break;
-			}
-
-		}
-
-		return IP;
-	}
+	//char* resolveDomain(char* domain) {
+	//	
+	//	dbgprintf("[!] Resolving domain '%s'\n", domain);
+	//	ADDRINFOA hints;
+	//	ADDRINFOA* result = nullptr;
+	//	ZeroMemory(&hints, sizeof(ADDRINFOA));
+	//
+	//	hints.ai_family = AF_INET;
+	//	hints.ai_socktype = SOCK_STREAM;
+	//	hints.ai_protocol = IPPROTO_TCP;
+	//
+	//	if (GetAddrInfoA(domain, nullptr, &hints, &result) != 0) {
+	//		dbgprintf("[-] Failed to get address information about domain name! Error code: %d\n", WSAGetLastError());
+	//		return NULL;
+	//	}
+	//
+	//	char *IP = (char*)malloc(INET_ADDRSTRLEN);
+	//
+	//	// Get the first one from the list if possible.
+	//	for (addrinfo* ptr = result; ptr != nullptr; ptr = ptr->ai_next) {
+	//		 
+	//		// Only IPv4 addresses.
+	//		if (ptr->ai_family == AF_INET) {
+	//
+	//			sockaddr_in* sockaddr = (sockaddr_in*)ptr->ai_addr;
+	//			inet_ntop(AF_INET, &(sockaddr->sin_addr), IP, INET_ADDRSTRLEN);
+	//
+	//			printf("[#] Found first IP %s\n", IP);
+	//			break;
+	//		}
+	//
+	//	}
+	//	FreeAddrInfoA(result);
+	//
+	//	return IP;
+	//}
 
 	/**
 	 *	Proxy connect to an app with IP and port.
+	 *	port is in host byte order
 	*/
-	int proxyConnect(int addrType, char* ip, int port) {
+	int proxyConnect(char* ip, int port) {
 		int red, appSock = SOCKET_ERROR;
 
 		// Construct struct for connecting.
 		struct sockaddr_in remote;
 		ZeroMemory(&remote, sizeof(sockaddr_in));
-		remote.sin_port = htons(port);
+		remote.sin_port = htons(port); // convert host order to network order once
 		remote.sin_family = AF_INET;
 		remote.sin_addr.s_addr = inet_addr(ip);
 
 		// Connect to remote address.
-		printf("[!] Connecting to app %s:%d\n", ip, port);
+		dbgprintf("[!] Connecting to app %s:%d\n", ip, port);
 
 		appSock = socket(AF_INET, SOCK_STREAM, NULL);
 		if (appSock == SOCKET_ERROR) {
-			printf("[-] Failed to create app socket! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[-] Failed to create app socket! Error code: %d\n", WSAGetLastError());
 			return SOCKET_ERROR;
 		}
 
 		if (connect(appSock, (sockaddr*)&remote, sizeof(remote)) == SOCKET_ERROR) {
 
-			printf("[-] Failed to connect to the app! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[-] Failed to connect to the app! Error code: %d\n", WSAGetLastError());
 			return SOCKET_ERROR;
 		}
 
+		dbgprintf("[+] Connection success for IP %s!\n", ip);
+
 		return appSock;
+	}
+
+	int proxyDNSConnect(char* domain, int port) {
+
+		// Not all IP work, so we need to go through a list of IPs.
+		dbgprintf("[!] Resolving domain '%s'\n", domain);
+		ADDRINFOA hints;
+		ADDRINFOA* result = nullptr;
+		ZeroMemory(&hints, sizeof(ADDRINFOA));
+
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_protocol = IPPROTO_TCP;
+
+		if (GetAddrInfoA(domain, nullptr, &hints, &result) != 0) {
+			dbgprintf("[-] Failed to get address information about domain name! Error code: %d\n", WSAGetLastError());
+			return SOCKET_ERROR;
+		}
+
+		int i = 0;
+		char* IP = (char*)malloc(INET_ADDRSTRLEN);
+		int status = 0;
+
+		// Get the first one from the list if possible.
+		for (addrinfo* ptr = result; ptr != nullptr; ptr = ptr->ai_next) {
+			// Only IPv4 addresses.
+			if (ptr->ai_family == AF_INET) {
+
+				sockaddr_in* sockaddr = (sockaddr_in*)ptr->ai_addr;
+				inet_ntop(AF_INET, &(sockaddr->sin_addr), IP, INET_ADDRSTRLEN);
+
+				dbgprintf("[#] Trying IP nr #%d %s\n", i, IP);
+
+				// Try connecting to this IP (port is in host order)
+				if ((status = proxyConnect(IP, port)) != SOCKET_ERROR) {
+					FreeAddrInfoA(result);
+					return status; // Connection success
+				}
+
+				dbgprintf("[!] Failed to connect, next IP!\n");
+				i++;
+				continue;
+			}
+
+		}
+		FreeAddrInfoA(result);
+		free(IP);
+		return SOCKET_ERROR;
 	}
 
 	/**
@@ -497,20 +577,20 @@ private:
 				if (nread <= 0) {
 
 					if (nread == 0) {
-						printf("[-] App closed connection!\n");
+						dbgprintf("[-] App closed connection!\n");
 					}
 					else {
-						printf("[-] Error reading from appSocket! Error code: %d\n", WSAGetLastError());
+						dbgprintf("[-] Error reading from appSocket! Error code: %d\n", WSAGetLastError());
 					}
 					break;
 				}
 
-				// printf("[*] %d bytes appSocket => clientSocket\n", nread);
+				// dbgprintf("[*] %d bytes appSocket => clientSocket\n", nread);
 
 				// Send to client socket.
 				if (send(clientSock, buffer, nread, NULL) == SOCKET_ERROR) {
 
-					printf("[-] Error sending data client socket! Error code: %d\n", WSAGetLastError());
+					dbgprintf("[-] Error sending data client socket! Error code: %d\n", WSAGetLastError());
 					break;
 				}
 
@@ -523,20 +603,20 @@ private:
 				int nread = recv(clientSock, buffer, MAX_BUFFER_SIZE, NULL);
 				if (nread <= 0) {
 					if (nread == 0) {
-						printf("[-] Client closed connection!\n");
+						dbgprintf("[-] Client closed connection!\n");
 					}
 					else {
-						printf("[-] Error reading from client! Error code: %d\n", errno);
+						dbgprintf("[-] Error reading from client! Error code: %d\n", errno);
 					}
 					break;
 				}
 
-				 //printf("[*] %d bytes clientSocket => appSocket\n", nread);
+				//dbgprintf("[*] %d bytes clientSocket => appSocket\n", nread);
 
-				// Send to app socket.
+			   // Send to app socket.
 				if (send(appSocket, buffer, nread, NULL) == SOCKET_ERROR) {
 
-					printf("[-] Error sending data to app socket! Error code: %d\n", errno);
+					dbgprintf("[-] Error sending data to app socket! Error code: %d\n", errno);
 					break;
 				}
 			}
@@ -549,15 +629,16 @@ public:
 
 	Sock5Proxy(int sock) : clientSocket(sock), authMethod(AuthMethods::NOAUTH) {}
 
-	Sock5Proxy(int sock, char* username, char* password) : clientSocket(sock), 
-		authMethod(AuthMethods::USER_PASSWORD), proxyUsername(username), proxyPassword(password) {}
+	Sock5Proxy(int sock, char* username, char* password) : clientSocket(sock),
+		authMethod(AuthMethods::USER_PASSWORD), proxyUsername(username), proxyPassword(password) {
+	}
 
 	~Sock5Proxy() {
 
 #ifdef WIN32
-			closesocket(this->clientSocket);
+		closesocket(this->clientSocket);
 #else
-			close(this->clientSocket);
+		close(this->clientSocket);
 #endif
 	}
 
@@ -574,8 +655,8 @@ public:
 		// Check if version compatible.
 		if (sizeRead == 2 && inv.version != ver::SOCKS5 && inv.version != ver::SOCKS4) {
 
-			printf("[#] They sent us {%hhX, %hhX}\n", inv.version, inv.nmethods);
-			printf("[-] Incompatible with our version!\n");
+			dbgprintf("[#] They sent us {%hhX, %hhX}\n", inv.version, inv.nmethods);
+			dbgprintf("[-] Incompatible with our version!\n");
 			exitThread();
 		}
 
@@ -611,11 +692,11 @@ public:
 		}
 		else if (inv.version == ver::SOCKS4) {
 
-			printf("[-] Version not yet supported...\n");
+			dbgprintf("[-] Version not yet supported...\n");
 
 		}
 		else {
-			printf("[-] Unsupported version!\n");
+			dbgprintf("[-] Unsupported version!\n");
 		}
 
 		this->exitThread();
@@ -628,7 +709,6 @@ public:
 	void handleRequests() {
 
 		// Get the command from the client.
-		char* IP = NULL;
 		int red, port;
 		CommandRequest request = this->receiveObject<CommandRequest>(&red);
 
@@ -640,69 +720,74 @@ public:
 
 			// Check if an domain is given instead of IP.
 			if (request.addrType == AddressType::FQDN) {
-				
+
+				dbgprintf("[#] We got DOMAIN + PORT\n");
+
 				// Parse domain and port.
 				char* domain = parseDomain();
 				port = parsePortDomain();
 
-				// Resolve address.			
-				IP = resolveDomain(domain);
+				appSocket = this->proxyDNSConnect(domain, port);
 			}
 			else {
+				dbgprintf("[#] We got IP + PORT\n");
+
 				// Parse the addresses.
 				IPv4 ipv4 = this->receiveObject<IPv4>(&red);
-				IP = Sock5Proxy::parseIPv4(ipv4.ip);
-				port = htons(ipv4.port);
+				// ipv4.ip is network order in the SOCKS5 packet; parseIPv4 expects network order
+				char* IP = Sock5Proxy::parseIPv4(ipv4.ip);
+				// convert port (network order) to host order before passing to proxyConnect
+				port = ntohs(ipv4.port);
+				appSocket = this->proxyConnect(IP, port);
 			}
 
-			appSocket = this->proxyConnect(request.addrType, IP, port);
 			break;
 		}
 
 		case Command::BIND: {
-			printf("[-] Proxy method BIND not supported yet!\n");
+			dbgprintf("[-] Proxy method BIND not supported yet!\n");
 
 			CommandResponse response = {
 				ver::SOCKS5,
 				CommandReply::CMD_NOT_SUPPORTED,
 				0x00, // Reserved
-				request.addrType
+				AddressType::IPV4
 			};
 
 			this->sendObject<CommandResponse>(response, sizeof(response));
-			this->sendIPResponse(" 0.0.0.0", 666);
+			this->sendIPResponse(INADDR_ANY, 666);
 			this->exitThread();
 			break;
 		}
 
 		case Command::UDP_ASSOCIATE: {
-			printf("[-] Proxy method UDP ASSOCIATE not supported yet!\n");
+			dbgprintf("[-] Proxy method UDP ASSOCIATE not supported yet!\n");
 
 			CommandResponse response = {
 				ver::SOCKS5,
 				CommandReply::CMD_NOT_SUPPORTED,
 				0x00, // Reserved
-				request.addrType
+				AddressType::IPV4
 			};
 
 			this->sendObject<CommandResponse>(response, sizeof(response));
-			this->sendIPResponse("0.0.0.0", 666);
+			this->sendIPResponse(INADDR_ANY, 666);
 			this->exitThread();
 			break;
 		}
 
 		default: {
-			printf("[-] Unknown proxy method: %hhx\n", request.command);
+			dbgprintf("[-] Unknown proxy method: %hhx\n", request.command);
 
 			CommandResponse response = {
 				ver::SOCKS5,
 				CommandReply::CMD_NOT_SUPPORTED,
 				0x00, // Reserved
-				request.addrType,
+				AddressType::IPV4,
 			};
 
 			this->sendObject<CommandResponse>(response, sizeof(response));
-			this->sendIPResponse("0.0.0.0", 666);
+			this->sendIPResponse(INADDR_ANY, 666);
 			this->exitThread();
 			break;
 		}
@@ -716,11 +801,12 @@ public:
 				ver::SOCKS5,
 				CommandReply::OK,
 				0x00, // Reserved
-				request.addrType
+				AddressType::IPV4
 			};
 
 			this->sendObject<CommandResponse>(response, sizeof(response));
-			this->sendIPResponse("0.0.0.0", 666);
+			// BND.ADDR and BND.PORT: return 0.0.0.0 and some port (host order)
+			this->sendIPResponse(INADDR_ANY, 0);
 
 			// Pipe connection.
 			pipeSocketApp(this->clientSocket, appSocket);
@@ -732,7 +818,7 @@ public:
 				ver::SOCKS5,
 				CommandReply::ERR,
 				0x00, // Reserved
-				request.addrType
+				AddressType::IPV4
 			};
 
 			// Based on socket error.
@@ -760,7 +846,7 @@ public:
 			}
 
 			this->sendObject<CommandResponse>(response, sizeof(response));
-			this->sendIPResponse("0.0.0.0", 666);
+			this->sendIPResponse(INADDR_ANY, 0);
 		}
 
 		this->exitThread(); // If finished close thread.
@@ -778,13 +864,13 @@ public:
 		WSADATA wsaData;
 		if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
 
-			printf("[-] Failed to initialize WinSock! Error code: %d\n", GetLastError());
+			dbgprintf("[-] Failed to initialize WinSock! Error code: %d\n", GetLastError());
 			return SOCKET_ERROR;
 		}
 
 		if ((serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == 0) {
 
-			printf("[-] Failed to create a socket! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[-] Failed to create a socket! Error code: %d\n", WSAGetLastError());
 			return SOCKET_ERROR;
 		}
 
@@ -794,12 +880,12 @@ public:
 		ioctlsocket(serverSocket, FIONBIO, &mode);
 
 		int option = 1;
-		if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, (char*) &option, sizeof(option))) {
-			
-			printf("[-] Failed to set socket option! Error code: %d\n", WSAGetLastError());
+		if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&option, sizeof(option))) {
+
+			dbgprintf("[-] Failed to set socket option! Error code: %d\n", WSAGetLastError());
 			return SOCKET_ERROR;
 		}
-	
+
 		// Create address that listens on ANY IP.
 		SOCKADDR_IN address;
 		ZeroMemory(&address, sizeof(SOCKADDR_IN));
@@ -809,24 +895,24 @@ public:
 
 		if (bind(serverSocket, (SOCKADDR*)&address, sizeof(address))) {
 
-			printf("[-] Failed to bind the proxy address! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[-] Failed to bind the proxy address! Error code: %d\n", WSAGetLastError());
 			return SOCKET_ERROR;
 		}
 
 		// Now listen for clients.
 		if (listen(serverSocket, SOMAXCONN) < 0) {
 
-			printf("[-] Failed to start listening for connections! Error code: %d\n", WSAGetLastError());
+			dbgprintf("[-] Failed to start listening for connections! Error code: %d\n", WSAGetLastError());
 			return SOCKET_ERROR;
 		}
 
 		// Put the socket in non-blocking mode, so that we can use multiple threads with it.
 		unsigned long on = 1;
 		ioctlsocket(serverSocket, FIONBIO, &on);
-		
+
 		return serverSocket;
 	}
-	
+
 	/**
 	*	App loop
 	*/
@@ -848,23 +934,23 @@ public:
 					continue;
 				}
 				else {
-					printf("[-] Failed to accept a client! Error code: %d\n", WSAGetLastError());
+					dbgprintf("[-] Failed to accept a client! Error code: %d\n", WSAGetLastError());
 					return SOCKET_ERROR;
 				}
 			}
 
-			printf("[!] Accepted new client connection.\n");
+			dbgprintf("[!] Accepted new client connection.\n");
 
 			// Set the client socket to non-blocking as well.
 			ioctlsocket(clientSocket, FIONBIO, &mode);
 
-			SOCK5ThreadParams params;
-			params.clientSocket = clientSocket;
-			params.username = username;
-			params.password = password;
-			if (CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)Sock5Proxy::proxyClientHandler, &params, NULL, NULL) == INVALID_HANDLE_VALUE)
+			SOCK5ThreadParams* params = new SOCK5ThreadParams;
+			params->clientSocket = clientSocket;
+			params->username = username;
+			params->password = password;
+			if (CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)Sock5Proxy::proxyClientHandler, params, NULL, NULL) == INVALID_HANDLE_VALUE)
 			{
-				printf("[-] Failed to create a new thread for the client! Error code: %d\n", GetLastError());
+				dbgprintf("[-] Failed to create a new thread for the client! Error code: %d\n", GetLastError());
 				return SOCKET_ERROR;
 			}
 		}
@@ -878,7 +964,7 @@ public:
 	* [param] -> int clientSocket;
 	*/
 	static DWORD WINAPI proxyClientHandler(LPVOID params) {
-		
+
 		SOCK5ThreadParams* threadParams = (SOCK5ThreadParams*)params;
 		int clientSocket = threadParams->clientSocket;
 
@@ -896,6 +982,7 @@ public:
 			proxy.handleRequests();
 		}
 
+		delete threadParams;
 		return 0;
 	}
 };
