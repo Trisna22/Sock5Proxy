@@ -18,6 +18,10 @@ Located at /Odysseus_Sock5Proxy_example_bof.cpp
 ## Username/Password authentication
 For username/Password authentication both the -u and -P option needs to be set. Details about this features are at RFC-1929.
 
+## TODO
+- [ ] Add encryption in the connection between the client and the proxy server.
+- [ ] Add support for reverse connections.
+
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
